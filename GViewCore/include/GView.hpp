@@ -996,6 +996,7 @@ namespace View
             bool SetAlignament(TokenAlignament align);
             bool UpdateAlignament(TokenAlignament flagsToAdd, TokenAlignament flagsToRemove = TokenAlignament::None);
             bool SetTokenColor(TokenColor col);
+            bool SetTypeID(uint32 t);
             bool SetBlock(Block block);
             bool SetBlock(uint32 blockIndex);
             bool DisableSimilartyHighlight();

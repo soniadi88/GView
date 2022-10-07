@@ -671,20 +671,28 @@ uint32 CPPFile::TokenizePreprocessDirective(const TextParser& text, TokensList& 
     list.Add(
           TokenType::Preprocess,
           start,
-          eol /*next*/,
+          next /*eol*/,
           TokenColor::Preprocesor,
-          TokenAlignament::StartsOnNewLine | TokenAlignament::AddSpaceAfter | TokenAlignament::NewLineAfter);
+          TokenAlignament::StartsOnNewLine); // | TokenAlignament::AddSpaceAfter | TokenAlignament::NewLineAfter);
 
-    // auto tknIndex = list.Len();
-    // Tokenize(next, eol, text, list, blocks);
-    // auto tknCount = list.Len();
-    //// change the color of every added token
-    // for (auto index = tknIndex; index < tknCount; index++)
-    //     list[index].SetTokenColor(TokenColor::Preprocesor);
-    //// make sure that last token has a new line after it
-    // list.GetLastToken().UpdateAlignament(TokenAlignament::NewLineAfter);
-    //// crete a block
-    // blocks.Add(tknIndex - 1, tknCount-1, BlockAlignament::AsBlockStartToken);
+    auto tknIndex = list.Len();
+    Tokenize(next, eol, text, list, blocks);
+    auto tknCount = list.Len();
+    // change the color of every added token
+    for (auto index = tknIndex; index < tknCount; index++) {
+        if (list[index].GetTypeID(TokenType::None) == TokenType::Comment) // can add single comments here also
+            list[index].SetTokenColor(TokenColor::Comment);
+        else
+        {
+            list[index].SetTokenColor(TokenColor::Preprocesor);
+            list[index].SetTypeID(TokenType::Preprocess);
+            list[index].UpdateAlignament(TokenAlignament::AfterPreviousToken, TokenAlignament::AddSpaceBefore | TokenAlignament::AddSpaceAfter);
+        }
+    }
+    // make sure that last token has a new line after it
+    list.GetLastToken().UpdateAlignament(TokenAlignament::NewLineAfter);
+    // create a block
+    blocks.Add(tknIndex - 1, tknCount-1, BlockAlignament::CurrentToken);
 
     return eol;
 }

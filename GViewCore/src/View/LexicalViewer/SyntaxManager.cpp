@@ -52,6 +52,12 @@ bool Token::SetTokenColor(TokenColor col)
     tok.color = col;
     return true;
 }
+bool Token::SetTypeID(uint32 t)
+{
+    CREATE_TOKENREF(false);
+    tok.type = t;
+    return true;
+}
 u16string_view Token::GetText() const
 {
     CREATE_TOKENREF(u16string_view{});
