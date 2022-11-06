@@ -40,8 +40,9 @@ bool MergeStrings::CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& 
     var test2 = asd + xz;
     var test3 = asd + t2;
     var test4 = x + xz;
-    var z     = t + test4 + t2 + "/something"; // limitation
+    var z     = t + test4 + t2 + "/something"; // need to run plugin twice for complete merge
     var z     = t + x + t2 + "/something";
+    var test5 = t + getSiteName() + t2;  // identifies function and skips replacements
 */
 GView::View::LexicalViewer::PluginAfterActionRequest MergeStrings::Execute(GView::View::LexicalViewer::PluginData& data)
 {
@@ -55,7 +56,7 @@ GView::View::LexicalViewer::PluginAfterActionRequest MergeStrings::Execute(GView
     while (index >= (int32) data.startIndex)
     {
         Token endToken = data.tokens[index];
-        if ((endToken.GetTypeID(TokenType::None) == TokenType::String || endToken.GetTypeID(TokenType::None) == TokenType::Word) &&
+        if ((endToken.GetTypeID(TokenType::None) == TokenType::String || (endToken.GetTypeID(TokenType::None) == TokenType::Word && data.tokens[index+1].GetTypeID(TokenType::None) != TokenType::ExpressionOpen)) &&
             endToken.Precedent().GetTypeID(TokenType::None) == TokenType::Operator_Plus &&
             (endToken.Precedent().Precedent().GetTypeID(TokenType::None) == TokenType::String ||
              endToken.Precedent().Precedent().GetTypeID(TokenType::None) == TokenType::Word))
@@ -114,25 +115,30 @@ GView::View::LexicalViewer::PluginAfterActionRequest MergeStrings::Execute(GView
                                 if (data.tokens[index2 + 2].GetTypeID(TokenType::None) == TokenType::String)
                                 {
                                     countStrings++;
-                                    
+                                    if (value.find_first_of('"') == std::u16string_view::npos)
+                                    {
+                                        temp.Add(value);
+                                    }
+                                    else
+                                    {
+                                        for (auto ch : value)
+                                        {
+                                            if (ch == '"')
+                                                temp.AddChar('\\');
+                                            temp.AddChar(ch);
+                                        }
+                                    }
                                 }
-                                else
+                                else if (data.tokens[index2 + 2].GetTypeID(TokenType::None) == TokenType::Word)
                                 {
                                     value = data.tokens[index2 + 2].GetText();
-                                }
-                                
-                                if (value.find_first_of('"') == std::u16string_view::npos)
-                                {
+                                    temp.Add("\" + ");
                                     temp.Add(value);
+                                    temp.Add(" + \"");
                                 }
-                                else
-                                {
-                                    for (auto ch : value)
-                                    {
-                                        if (ch == '"')
-                                            temp.AddChar('\\');
-                                        temp.AddChar(ch);
-                                    }
+                                else { // numeric
+                                    value = data.tokens[index2 + 2].GetText();
+                                    temp.Add(value);
                                 }
                                 index2 += 2;
                             } while ((data.tokens[index2 + 1].GetTypeID(TokenType::None) != TokenType::Semicolumn) && (index2 < (index - 6)));
