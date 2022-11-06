@@ -6,10 +6,10 @@ using namespace GView;
 
 constexpr uint64 EXTENSION_EMPTY_HASH = 0xcbf29ce484222325ULL;
 
-uint64 ExtensionToHash(std::string_view ext)
+uint64 Plugin::ExtensionToHash(std::string_view ext)
 {
     // use FNV algorithm ==> https://en.wikipedia.org/wiki/Fowler%E2%80%93Noll%E2%80%93Vo_hash_function
-    if (ext.empty())
+    if ((ext.empty()) || (ext.size()==0))
         return 0;
     auto* s = (const uint8*) ext.data();
     auto* e = s + ext.size();
@@ -19,6 +19,28 @@ uint64 ExtensionToHash(std::string_view ext)
     while (s < e)
     {
         uint8 c = *s;
+        if ((c >= 'A') && (c <= 'Z'))
+            c |= 0x20;
+
+        hash = hash ^ c;
+        hash = hash * 0x00000100000001B3ULL;
+        s++;
+    }
+    return hash;
+}
+uint64 Plugin::ExtensionToHash(std::u16string_view ext)
+{
+    // use FNV algorithm ==> https://en.wikipedia.org/wiki/Fowler%E2%80%93Noll%E2%80%93Vo_hash_function
+    if (ext.empty())
+        return 0;
+    auto* s = (const uint16*) ext.data();
+    auto* e = s + ext.size();
+    if ((*s) == '.')
+        s++;
+    uint64 hash = EXTENSION_EMPTY_HASH;
+    while (s < e)
+    {
+        uint8 c = static_cast<uint8>((*s) & 0xFF);
         if ((c >= 'A') && (c <= 'Z'))
             c |= 0x20;
 
@@ -157,7 +179,7 @@ bool Plugin::MatchExtension(uint64 extensionHash)
 {
     if (this->Invalid)
         return false;
-    if ((this->extension == EXTENSION_EMPTY_HASH) || (this->extensions.empty()))
+    if ((this->extension == EXTENSION_EMPTY_HASH) && (this->extensions.empty()))
         return false;
     if (this->extensions.empty())
         return extensionHash == this->extension;
@@ -185,7 +207,7 @@ bool Plugin::MatchContent(AppCUI::Utils::BufferView buf, Matcher::TextParser& te
     }
     return false;
 }
-bool Plugin::IsOfType(AppCUI::Utils::BufferView buf)
+bool Plugin::IsOfType(AppCUI::Utils::BufferView buf, Matcher::TextParser& textParser)
 {
     if (this->Invalid)
         return false;
@@ -199,49 +221,7 @@ bool Plugin::IsOfType(AppCUI::Utils::BufferView buf)
     // all good -> code is loaded
     return fnValidate(buf, "");
 }
-bool Plugin::Validate(BufferView buf, std::string_view extension)
-{
-    if (this->Invalid)
-        return false; // a load in memory attempt was tryed and failed
-    bool matched = false;
-    // check if matches any of the existing patterns
-    Matcher::TextParser tempTXT(nullptr, 0);
-    if (this->patterns.empty())
-    {
-        if (this->pattern)
-        {
-            matched = this->pattern->Match(buf, tempTXT);
-        }
-    }
-    else
-    {
-        for (auto& p : this->patterns)
-        {
-            if ((matched = p->Match(buf, tempTXT)) == true)
-                break;
-        }
-    }
-    if ((!matched) && ((this->extension != EXTENSION_EMPTY_HASH) || (!this->extensions.empty())))
-    {
-        auto hash = ExtensionToHash(extension);
-        if (this->extensions.empty())
-            matched = hash == this->extension;
-        else
-            matched = this->extensions.contains(hash);
-    }
-    // if initial prefilter was not matched --> exit
-    if (!matched)
-        return false;
-    if (!this->Loaded)
-    {
-        this->Invalid = !LoadPlugin();
-        this->Loaded  = !this->Invalid;
-        if (this->Invalid)
-            return false; // something went wrong when loading he plugin
-    }
-    // all good -> code is loaded
-    return fnValidate(buf, extension);
-}
+
 bool Plugin::PopulateWindow(Reference<GView::View::WindowInterface> win) const
 {
     CHECK(!this->Invalid, false, "Invalid plugin (not loaded properly or no valid exports)");
