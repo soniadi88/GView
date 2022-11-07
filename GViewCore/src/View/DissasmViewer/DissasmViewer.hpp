@@ -6,6 +6,7 @@
 #include <utility>
 #include <deque>
 #include <list>
+#include <capstone/capstone.h>
 
 namespace GView
 {
@@ -15,8 +16,9 @@ namespace View
     {
         using namespace AppCUI;
 
-        static constexpr size_t CACHE_OFFSETS_DIFFERENCE = 500;
-        static constexpr size_t DISSASM_MAX_CACHED_LINES = 200;
+        static constexpr size_t CACHE_OFFSETS_DIFFERENCE      = 500;
+        static constexpr size_t DISSASM_MAX_CACHED_LINES      = 50;
+        static constexpr size_t DISSASM_INITIAL_EXTENDED_SIZE = 1;
 
         struct Config
         {
@@ -31,11 +33,22 @@ namespace View
                 ColorPair OutsideZone;
                 ColorPair StructureColor;
                 ColorPair DataTypeColor;
+                ColorPair AsmOffsetColor;                // 0xsomthing
+                ColorPair AsmIrrelevantInstructionColor; // int3
+                ColorPair AsmWorkRegisterColor;          // eax, ebx,ecx, edx
+                ColorPair AsmStackRegisterColor;         // ebp, edi, esi
+                ColorPair AsmCompareInstructionColor;    // test, cmp
+                ColorPair AsmFunctionColor;              // ret call
+                ColorPair AsmLocationInstruction;        // dword ptr[ ]
+                ColorPair AsmJumpInstruction;            // jmp
+                ColorPair AsmComment;                    // comments added by user
+                ColorPair AsmDefaultColor;               // rest of things
             } Colors;
             struct
             {
                 AppCUI::Input::Key AddNewType;
                 AppCUI::Input::Key ShowFileContentKey;
+                AppCUI::Input::Key ExportAsmToFile;
             } Keys;
             bool Loaded;
 
@@ -50,6 +63,7 @@ namespace View
             uint64 size;
             uint64 entryPoint;
             DisassemblyLanguage language;
+            DissasmArchitecture architecture;
         };
 
         enum class InternalDissasmType : uint8
@@ -133,7 +147,13 @@ namespace View
             std::vector<CharacterBuffer> cachedLines;
             std::vector<uint64> cachedCodeOffsets;
             DisassemblyZone zoneDetails;
+            std::unordered_map<uint32, std::string> comments;
+            int internalArchitecture; //used for dissasm libraries
             bool isInit;
+
+            void AddOrUpdateComment(uint32 line, std::string comment);
+            bool HasComment(uint32 line, std::string& comment) const;
+            void RemoveComment(uint32 line);
         };
 
         struct SettingsData
@@ -150,6 +170,20 @@ namespace View
             std::map<uint64, CollapsibleAndTextData> collapsibleAndTextZones;
             std::unordered_map<TypeID, DissasmType> userDesignedTypes; // user defined types
             SettingsData();
+        };
+
+        struct LayoutDissasm
+        {
+            uint32 visibleRows;
+            uint32 totalCharactersPerLine;
+            uint32 textSize; // charactersPerLine minus the left parts
+            uint32 startingTextLineOffset;
+            bool structuresInitialCollapsedState;
+        };
+
+        struct AsmData
+        {
+            std::map<uint32, ColorPair> instructionToColor;
         };
 
         class Instance : public View::ViewControl
@@ -195,14 +229,7 @@ namespace View
                 ColorPair Normal, Line, Highlighted;
             } CursorColors;
 
-            struct LayoutDissasm
-            {
-                uint32 visibleRows;
-                uint32 totalCharactersPerLine;
-                uint32 textSize; // charactersPerLine minus the left parts
-                uint32 startingTextLineOffset;
-                bool structuresInitialCollapsedState;
-            } Layout;
+            LayoutDissasm Layout;
 
             struct
             {
@@ -250,6 +277,8 @@ namespace View
             Menu rightClickMenu;
             uint64 rightClickOffset;
 
+            AsmData asmData;
+
             inline void UpdateCurrentZoneIndex(const DissasmType& cType, DissasmParseStructureZone* zone, bool increaseOffset);
 
             void RecomputeDissasmLayout();
@@ -289,6 +318,9 @@ namespace View
 
             // Operations
             void AddNewCollapsibleZone();
+            void AddComment();
+            void RemoveComment();
+            void CommandExportAsmFile();
 
           public:
             Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* settings);
@@ -323,6 +355,22 @@ namespace View
             virtual void SetCustomPropertyValue(uint32 propertyID) override;
             virtual bool IsPropertyValueReadOnly(uint32 propertyID) override;
             virtual const vector<Property> GetPropertiesList() override;
+        }; // Instance
+
+        class CommentDataWindow : public Window
+        {
+            std::string data;
+            Reference<TextField> commentTextField;
+
+            void Validate();
+
+          public:
+            CommentDataWindow(std::string initialComment);
+            virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
+            inline std::string GetResult() const
+            {
+                return data;
+            }
         };
     } // namespace DissasmViewer
 } // namespace View

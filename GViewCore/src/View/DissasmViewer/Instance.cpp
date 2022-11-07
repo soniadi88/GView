@@ -3,6 +3,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <cassert>
+#include <unordered_map>
 
 using namespace GView::View::DissasmViewer;
 using namespace AppCUI::Input;
@@ -13,17 +14,21 @@ constexpr int32 RIGHT_CLICK_MENU_CMD_NEW      = 0;
 constexpr int32 RIGHT_CLICK_MENU_CMD_EDIT     = 1;
 constexpr int32 RIGHT_CLICK_MENU_CMD_DELETE   = 2;
 constexpr int32 RIGHT_CLICK_MENU_CMD_COLLAPSE = 3;
+constexpr int32 RIGHT_CLICK_ADD_COMMENT       = 4;
+constexpr int32 RIGHT_CLICK_REMOVE_COMMENT    = 5;
 
 struct
 {
     int commandID;
     string_view text;
+    // Input::Key shortcutKey = Input::Key::None;
     ItemHandle handle = InvalidItemHandle;
-} RIGHT_CLICK_MENU_COMMANDS[] = {
-    { RIGHT_CLICK_MENU_CMD_NEW, "New structure" },
-    { RIGHT_CLICK_MENU_CMD_EDIT, "Edit zone" },
-    { RIGHT_CLICK_MENU_CMD_DELETE, "Delete zone" },
-    { RIGHT_CLICK_MENU_CMD_COLLAPSE, "Collapse zone" },
+} RIGHT_CLICK_MENU_COMMANDS[] = { /*{ RIGHT_CLICK_MENU_CMD_NEW, "New structure" },
+                                  { RIGHT_CLICK_MENU_CMD_EDIT, "Edit zone" },
+                                  { RIGHT_CLICK_MENU_CMD_DELETE, "Delete zone" },
+                                  { RIGHT_CLICK_MENU_CMD_COLLAPSE, "Collapse zone" },*/
+                                  { RIGHT_CLICK_ADD_COMMENT, "Add comment" },
+                                  { RIGHT_CLICK_REMOVE_COMMENT, "Remove comment" }
 };
 
 Instance::Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* _settings)
@@ -66,6 +71,19 @@ Instance::Instance(const std::string_view& name, Reference<GView::Object> obj, S
         menu_command.handle = rightClickMenu.AddCommandItem(menu_command.text, menu_command.commandID);
     }
     rightClickOffset = 0;
+
+    // TODO: to be moved inside plugin for some sort of API for token<->color
+    asmData.instructionToColor = {
+        { *((uint32*) "int3"), config.Colors.AsmIrrelevantInstructionColor },
+        { *((uint32*) "ret"), config.Colors.AsmFunctionColor },
+        { *((uint32*) "call"), config.Colors.AsmFunctionColor },
+        { *((uint32*) "cmp"), config.Colors.AsmCompareInstructionColor },
+        { *((uint32*) "test"), config.Colors.AsmCompareInstructionColor },
+        { *((uint32*) "word"), config.Colors.AsmLocationInstruction },
+        { *((uint32*) "dwor"), config.Colors.AsmLocationInstruction },
+        { *((uint32*) "qwor"), config.Colors.AsmLocationInstruction },
+        { *((uint32*) "ptr"), config.Colors.AsmLocationInstruction },
+    };
 }
 
 bool Instance::GoTo(uint64 offset)
@@ -196,6 +214,75 @@ void Instance::AddNewCollapsibleZone()
     // TODO:
     settings->collapsibleAndTextZones[offsetStart] = { offsetStart, offsetEnd - offsetStart + 1, true };
     RecomputeDissasmZones();
+}
+
+void Instance::AddComment()
+{
+    const uint64 offsetStart = Cursor.currentPos;
+    const uint64 offsetEnd   = offsetStart + 1;
+
+    const auto zonesFound = GetZonesIndexesFromPosition(offsetStart, offsetEnd);
+    if (zonesFound.empty() || zonesFound.size() != 1)
+    {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a dissasm zone!");
+        return;
+    }
+
+    const auto& zone = settings->parseZones[zonesFound[0].zoneIndex];
+    if (zone->zoneType != DissasmParseZoneType::DissasmCodeParseZone)
+    {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a dissasm zone!");
+        return;
+    }
+
+    if (zonesFound[0].zoneLine == 0)
+    {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please add comment inside the region, not on the title!");
+        return;
+    }
+
+    const auto convertedZone = static_cast<DissasmCodeZone*>(zone.get());
+
+    std::string foundComment;
+    // TODO: refactor function HasComment to return the comment or empty string for avoiding double initialization
+    convertedZone->HasComment(zonesFound[0].zoneLine, foundComment);
+
+    selection.Clear();
+    CommentDataWindow dlg(foundComment);
+    if (dlg.Show() == Dialogs::Result::Ok)
+    {
+        convertedZone->AddOrUpdateComment(zonesFound[0].zoneLine, dlg.GetResult());
+    }
+}
+
+void Instance::RemoveComment()
+{
+    // TODO: duplicate code -> maybe extract this?
+    const uint64 offsetStart = Cursor.currentPos;
+    const uint64 offsetEnd   = offsetStart + 1;
+
+    const auto zonesFound = GetZonesIndexesFromPosition(offsetStart, offsetEnd);
+    if (zonesFound.empty() || zonesFound.size() != 1)
+    {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a dissasm zone!");
+        return;
+    }
+
+    const auto& zone = settings->parseZones[zonesFound[0].zoneIndex];
+    if (zone->zoneType != DissasmParseZoneType::DissasmCodeParseZone)
+    {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a dissasm zone!");
+        return;
+    }
+
+    if (zonesFound[0].zoneLine == 0)
+    {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please add comment inside the region, not on the title!");
+        return;
+    }
+
+    const auto convertedZone = static_cast<DissasmCodeZone*>(zone.get());
+    convertedZone->RemoveComment(zonesFound[0].zoneLine);
 }
 
 bool Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
@@ -570,7 +657,10 @@ bool Instance::DrawCollapsibleAndTextZone(DrawLineInfo& dli, CollapsibleAndTextZ
                 if (!buf.IsValid())
                 {
                     AddStringToChars(
-                          dli, config.Colors.StructureColor, "\tInvalid buff at position: %ull", zone->data.startingOffset + zone->data.size);
+                          dli,
+                          config.Colors.StructureColor,
+                          "\tInvalid buff at position: %ull",
+                          zone->data.startingOffset + zone->data.size);
 
                     const size_t buffer_size = dli.chText - this->chars.GetBuffer();
                     const auto bufferToDraw  = CharacterView{ chars.GetBuffer(), buffer_size };
@@ -789,7 +879,8 @@ void Instance::RecomputeDissasmZones()
                 codeZone->zoneDetails     = *convertedData;
                 codeZone->startLineIndex  = zoneStartingLine;
                 codeZone->endingLineIndex = codeZone->startLineIndex + 1;
-                codeZone->isCollapsed     = Layout.structuresInitialCollapsedState;
+                codeZone->extendedSize    = DISSASM_INITIAL_EXTENDED_SIZE;
+                codeZone->isCollapsed     = false; // Layout.structuresInitialCollapsedState;
                 // codeZone->textLinesOffset = textLinesOffset;
                 codeZone->zoneID   = currentIndex++;
                 codeZone->zoneType = DissasmParseZoneType::DissasmCodeParseZone;
@@ -798,6 +889,9 @@ void Instance::RecomputeDissasmZones()
                 // initial offset is the entry point
                 codeZone->cachedCodeOffsets.push_back(convertedData->entryPoint);
                 codeZone->cachedLines.resize(DISSASM_MAX_CACHED_LINES);
+
+                if (!codeZone->isCollapsed)
+                    codeZone->endingLineIndex += codeZone->extendedSize;
 
                 // lastEndMinusLastOffset = codeZone->endingLineIndex + codeZone->textLinesOffset;
                 lastZoneEndingIndex = codeZone->endingLineIndex;
@@ -931,7 +1025,7 @@ vector<Instance::ZoneLocation> Instance::GetZonesIndexesFromPosition(uint64 star
     {
         if (zones[zoneIndex]->startLineIndex <= line && line < zones[zoneIndex]->endingLineIndex &&
             (result.empty() || result.back().zoneIndex != zoneIndex))
-            result.push_back({ zoneIndex, line });
+            result.push_back({ zoneIndex, line - zones[zoneIndex]->startLineIndex });
         else if (line >= zones[zoneIndex]->endingLineIndex)
             zoneIndex++;
     }
@@ -1126,4 +1220,31 @@ Instance::~Instance()
         settings->buffersToDelete.pop_back();
         delete bufferToDelete;
     }
+}
+
+void DissasmCodeZone::AddOrUpdateComment(uint32 line, std::string comment)
+{
+    comments[line - 1] = std::move(comment);
+}
+
+bool DissasmCodeZone::HasComment(uint32 line, std::string& comment) const
+{
+    const auto it = comments.find(line - 1);
+    if (it != comments.end())
+    {
+        comment = it->second;
+        return true;
+    }
+    return false;
+}
+
+void GView::View::DissasmViewer::DissasmCodeZone::RemoveComment(uint32 line)
+{
+    const auto it = comments.find(line - 1);
+    if (it != comments.end())
+    {
+        comments.erase(it);
+        return;
+    }
+    Dialogs::MessageBox::ShowError("Error", "No comments found on the selected line !");
 }

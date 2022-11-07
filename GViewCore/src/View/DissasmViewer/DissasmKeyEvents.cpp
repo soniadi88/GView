@@ -2,12 +2,15 @@
 
 constexpr uint32 COMMAND_ADD_NEW_TYPE          = 100;
 constexpr uint32 COMMAND_ADD_SHOW_FILE_CONTENT = 101;
+constexpr uint32 COMMAND_EXPORT_ASM_FILE       = 102;
 
 // TODO: fix remove duplicate with Instance.cpp
 constexpr int32 RIGHT_CLICK_MENU_CMD_NEW      = 0;
 constexpr int32 RIGHT_CLICK_MENU_CMD_EDIT     = 1;
 constexpr int32 RIGHT_CLICK_MENU_CMD_DELETE   = 2;
 constexpr int32 RIGHT_CLICK_MENU_CMD_COLLAPSE = 3;
+constexpr int32 RIGHT_CLICK_ADD_COMMENT       = 4;
+constexpr int32 RIGHT_CLICK_REMOVE_COMMENT    = 5;
 
 using namespace GView::View::DissasmViewer;
 using namespace AppCUI::Input;
@@ -228,7 +231,15 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode)
     case Key::Ctrl | Key::Right:
         MoveScrollTo(this->Cursor.startView + 1);
         return true;
-    };
+    case Key::Delete:
+        RemoveComment();
+        return true;
+    }
+    if (charCode == ';')
+    {
+        AddComment();
+        return true;
+    }
     return false;
 }
 
@@ -237,6 +248,7 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
     const AppCUI::Utils::ConstString ShowFileContentText = config.ShowFileContent ? "ShowFileContent" : "HideFileContent";
     commandBar.SetCommand(config.Keys.AddNewType, "AddNewType", COMMAND_ADD_NEW_TYPE);
     commandBar.SetCommand(config.Keys.ShowFileContentKey, ShowFileContentText, COMMAND_ADD_SHOW_FILE_CONTENT);
+    commandBar.SetCommand(config.Keys.ExportAsmToFile, "Export asm file", COMMAND_EXPORT_ASM_FILE);
 
     return false;
 }
@@ -256,6 +268,15 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
             return true;
         case RIGHT_CLICK_MENU_CMD_COLLAPSE:
             AddNewCollapsibleZone();
+            return true;
+        case RIGHT_CLICK_ADD_COMMENT:
+            AddComment();
+            return true;
+        case RIGHT_CLICK_REMOVE_COMMENT:
+            RemoveComment();
+            return true;
+        case COMMAND_EXPORT_ASM_FILE:
+            CommandExportAsmFile();
             return true;
         default:
             return false;
