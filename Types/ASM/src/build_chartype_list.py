@@ -8,7 +8,9 @@ def GetCharType(ch):
 	if (ch=='\n') or (ch=='\r'):
 		return "NewLine"
 	if ch=='#':
-		return "Preprocess"
+		return "Comment"
+	if ch=='.':
+		return "Directive"
 	if ch in "!%+-=^&|*:?~\/><.":
 		return "Operator"
 	if ch == '{':
@@ -16,9 +18,9 @@ def GetCharType(ch):
 	if ch == '}':
 		return "BlockClose"
 	if ch == '[':
-		return "ArrayOpen"
+		return "MemAddrOpen"
 	if ch == ']':
-		return "ArrayClose"
+		return "MemAddrClose"
 	if ch == '(':
 		return "ExpressionOpen"
 	if ch == ')':
